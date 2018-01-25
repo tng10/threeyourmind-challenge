@@ -9,10 +9,27 @@ from printapp.models import Printer
 
 class CustomNestingField(serializers.Field):
 
-	def __init__(self, field_name, attrs, *args, **kwargs):
+	def __init__(self, field_name, attrs, model, *args, **kwargs):
 		super(CustomNestingField, self).__init__(*args, **kwargs)
 		self.field_name = field_name
 		self.attrs = attrs
+		self.model = model
+
+	def _get_type_from_model_field(self, model_field_name):
+		internal_type = self.model._meta.get_field(model_field_name).get_internal_type()
+		_types = six.string_types
+		name = 'string'
+		if internal_type == 'IntegerField':
+			_types = six.integer_types
+			name = 'integer'
+		elif internal_type == 'CharField':
+			_types = six.string_types
+			name = 'string'
+		elif internal_type == 'BinaryField':
+			_types = six.binary_type
+			name = 'bool'
+		
+		return {'types': _types, 'name': name}
 
 	def to_internal_value(self, data):
 		if not isinstance(self.field_name, six.string_types):
@@ -35,11 +52,15 @@ class CustomNestingField(serializers.Field):
 					if key not in self.attrs.keys():
 						msg = '%s is not part of %s'
 						raise ValidationError(msg % (key, self.attrs.keys()))
-			
-			for value in data.values():
-				if not isinstance(value, six.integer_types):
-					msg = 'Incorrect type. Expected a integer, but got %s'
-					raise ValidationError(msg % type(value).__name__)
+
+			for key, value in data.iteritems():
+
+				model_field_name = self.attrs[key]
+				expected_type = self._get_type_from_model_field(model_field_name)
+
+				if not isinstance(value, expected_type['types']):
+					msg = 'Incorrect type. Expected a %s, but got %s'
+					raise ValidationError(msg % (expected_type['name'], type(value).__name__))
 
 		field_attrs = {}
 
@@ -70,7 +91,7 @@ class NestingSerializer(serializers.Serializer):
 			self._delete_fields(field_attributes)
 
 	def _perform_build_field(self, field_name, field_attributes):
-		self.fields[field_name] = CustomNestingField(source='*', field_name=field_name, attrs=field_attributes)
+		self.fields[field_name] = CustomNestingField(source='*', field_name=field_name, attrs=field_attributes, model=self.Meta.model)
 		print self.fields[field_name].to_representation(self.instance)
 
 	def _delete_fields(self, field_attributes):
@@ -109,6 +130,6 @@ class PrinterSerializer(NestingSerializer, serializers.ModelSerializer):
 
 	def validate(self, data):
 		data = super(PrinterSerializer, self).validate(data)
-		if data['min_production_time'] > data['max_production_time']:
+		if data.get('min_production_time') > data.get('max_production_time'):
 			raise serializers.ValidationError("Min. production time cannot be greater than Max. production time")
 		return data

@@ -123,6 +123,7 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 
+APPEND_SLASH = True
 
 REST_FRAMEWORK = {
     # Use Django's standard `django.contrib.auth` permissions,
